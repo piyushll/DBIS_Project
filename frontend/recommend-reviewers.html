@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reviewer Recommendation System</title>
+    <link rel="stylesheet" href="styles/style.css">
+    <style>
+        .container {
+            max-width: 900px;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+            text-align: right;
+        }
+        .nav-links a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .reviewer-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #f9f9f9;
+            position: relative;
+        }
+        .reviewer-card:hover {
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .reviewer-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .reviewer-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #2c3e50;
+        }
+        .reviewer-id {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .reviewer-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 20px;
+            margin-bottom: 10px;
+        }
+        .stat {
+            display: flex;
+            align-items: center;
+            font-size: 0.9em;
+        }
+        .stat-label {
+            font-weight: bold;
+            margin-right: 5px;
+            color: #34495e;
+        }
+        .venue-list {
+            margin-top: 5px;
+            padding-left: 5px;
+        }
+        .venue-item {
+            margin-bottom: 3px;
+            font-size: 0.9em;
+            color: #2980b9;
+        }
+        .reviewer-score {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .summary-info {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="nav-links">
+        <a href="index.html">Conflict Checker</a>
+        <a href="view-tables.html">View Database</a>
+    </div>
+
+    <h2>Reviewer Recommendation System</h2>
+    <p>Get a list of recommended reviewers with no conflicts and diverse backgrounds.</p>
+
+    <label for="authorIds">Enter Author IDs (comma-separated):</label>
+    <input type="text" id="authorIds" placeholder="e.g., person/John_Smith, person/Jane_Doe">
+
+    <div style="display: flex; gap: 15px;">
+        <div style="flex: 1;">
+            <label for="reviewerCount">Number of Reviewers to Recommend:</label>
+            <input type="number" id="reviewerCount" min="1" max="10" value="3" placeholder="e.g., 3">
+        </div>
+        <div style="flex: 1;">
+            <label for="years">No Coauthorship in Last X Years:</label>
+            <input type="number" id="years" min="1" value="5" placeholder="e.g., 5">
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 15px;">
+        <div style="flex: 1;">
+            <label for="yearThreshold">Check for Coauthorship in Last Y Years:</label>
+            <input type="number" id="yearThreshold" min="1" value="10" placeholder="e.g., 10">
+        </div>
+        <div style="flex: 1;">
+            <label for="coauthorThreshold">Maximum Allowed Joint Papers (N):</label>
+            <input type="number" id="coauthorThreshold" min="1" value="3" placeholder="e.g., 3">
+        </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+        <button class="btn-primary" style="width: 70%;" onclick="recommendReviewers()">Recommend Reviewers</button>
+        <button class="btn-secondary" style="width: 25%;" onclick="resetForm()">Reset</button>
+    </div>
+
+    <div id="output" class="output"></div>
+    
+    <div id="recommendationResults" style="margin-top: 20px;"></div>
+</div>
+
+<script>
+    async function recommendReviewers() {
+        const authorIds = document.getElementById('authorIds').value.split(',').map(id => id.trim());
+        const count = parseInt(document.getElementById('reviewerCount').value, 10);
+        const years = parseInt(document.getElementById('years').value, 10);
+        const coauthorThreshold = parseInt(document.getElementById('coauthorThreshold').value, 10);
+        const yearThreshold = parseInt(document.getElementById('yearThreshold').value, 10);
+
+        // Validate input
+        if (authorIds.length === 0 || authorIds[0] === '') {
+            displayError("Please enter at least one author ID.");
+            return;
+        }
+        
+        if (isNaN(count) || count < 1 || count > 10) {
+            displayError("Please enter a valid number of reviewers (1-10).");
+            return;
+        }
+        
+        if (isNaN(years) || isNaN(coauthorThreshold) || isNaN(yearThreshold)) {
+            displayError("Please fill in all fields with valid values.");
+            return;
+        }
+
+        showLoading("Finding suitable reviewers...");
+
+        try {
+            const response = await fetch('/recommend-reviewers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    authorIds, 
+                    count, 
+                    years, 
+                    coauthorThreshold, 
+                    yearThreshold 
+                })
+            });
+            const data = await response.json();
+            
+            if (response.ok) {
+                displayRecommendations(data);
+            } else {
+                displayError('Error: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            displayError('Error connecting to the server: ' + error.message);
+            console.error('Error:', error);
+        }
+    }
+
+    function displayRecommendations(data) {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        output.className = 'success';
+        
+        const resultContainer = document.getElementById('recommendationResults');
+        resultContainer.innerHTML = '';
+        
+        // If no recommendations available
+        if (!data.recommendedReviewers || data.recommendedReviewers.length === 0) {
+            output.textContent = "No eligible reviewers found with the given criteria.";
+            return;
+        }
+        
+        // Display summary information
+        const summary = document.createElement('div');
+        summary.className = 'summary-info';
+        summary.innerHTML = `
+            <p><strong>Found ${data.recommendedReviewers.length} recommended reviewers</strong> from a pool of ${data.totalEligible} eligible candidates.</p>
+            <p>Excluded ${data.totalWithConflicts} potential reviewers due to conflicts.</p>
+        `;
+        resultContainer.appendChild(summary);
+        
+        // Display each reviewer
+        data.recommendedReviewers.forEach(reviewer => {
+            const card = document.createElement('div');
+            card.className = 'reviewer-card';
+            
+            // Format years active
+            let yearsActive = 'N/A';
+            if (reviewer.years_active && reviewer.years_active.first_year && reviewer.years_active.last_year) {
+                yearsActive = `${reviewer.years_active.first_year}-${reviewer.years_active.last_year}`;
+            }
+            
+            // Format venues
+            let venuesList = '<div class="venue-list">';
+            if (reviewer.venues && reviewer.venues.length > 0) {
+                reviewer.venues.forEach(venue => {
+                    venuesList += `<div class="venue-item">${venue.journal} (${venue.count} papers)</div>`;
+                });
+            } else {
+                venuesList += '<div class="venue-item">No venue information available</div>';
+            }
+            venuesList += '</div>';
+            
+            card.innerHTML = `
+                <div class="reviewer-score">${reviewer.score}</div>
+                <div class="reviewer-header">
+                    <div>
+                        <div class="reviewer-name">${reviewer.name}</div>
+                        <div class="reviewer-id">${reviewer.person_key}</div>
+                    </div>
+                </div>
+                <div class="reviewer-stats">
+                    <div class="stat">
+                        <div class="stat-label">Publications:</div>
+                        <div>${reviewer.publication_count}</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Years Active:</div>
+                        <div>${yearsActive}</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Co-authors:</div>
+                        <div>${reviewer.coauthor_count}</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="stat-label">Top Publication Venues:</div>
+                    ${venuesList}
+                </div>
+            `;
+            
+            resultContainer.appendChild(card);
+        });
+        
+        output.textContent = `Successfully found ${data.recommendedReviewers.length} recommended reviewers with no conflicts.`;
+    }
+
+    function showLoading(message) {
+        const output = document.getElementById('output');
+        output.className = 'loading';
+        output.textContent = message;
+        
+        document.getElementById('recommendationResults').innerHTML = '';
+    }
+
+    function displayError(message) {
+        const output = document.getElementById('output');
+        output.className = 'error';
+        output.textContent = message;
+        
+        document.getElementById('recommendationResults').innerHTML = '';
+    }
+
+    function resetForm() {
+        document.getElementById('authorIds').value = '';
+        document.getElementById('reviewerCount').value = '3';
+        document.getElementById('years').value = '5';
+        document.getElementById('coauthorThreshold').value = '3';
+        document.getElementById('yearThreshold').value = '10';
+        
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        output.className = '';
+        
+        document.getElementById('recommendationResults').innerHTML = '';
+    }
+</script>
+
+</body>
+</html> 

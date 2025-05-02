@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Table Viewer</title>
+    <link rel="stylesheet" href="styles/style.css">
+    <style>
+        .table-viewer {
+            margin-top: 20px;
+            overflow-x: auto;
+            width: 100%;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            table-layout: auto;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            word-break: break-word;
+            max-width: 300px; /* Set maximum width for cells */
+            min-width: 100px; /* Set minimum width for cells */
+        }
+        .data-table th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            font-weight: bold;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .row-info {
+            margin-top: 10px;
+            font-style: italic;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .controls select, .controls input, .controls button {
+            padding: 8px;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            margin-right: 15px;
+        }
+        /* Make the container responsive to table size */
+        .container {
+            max-width: 900px; /* Default width */
+            padding: 20px 30px;
+            margin: 0 auto;
+            transition: max-width 0.3s ease;
+        }
+        /* Wide container class for larger tables */
+        .container.wide {
+            max-width: 1200px;
+        }
+        /* Extra wide container class for very large tables */
+        .container.extra-wide {
+            max-width: 1600px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="nav-links">
+        <a href="index.html">Back to Conflict Checker</a>
+    </div>
+
+    <h2>Database Table Viewer</h2>
+    <p>View data from any table in the database.</p>
+
+    <div class="controls">
+        <select id="tableSelect">
+            <option value="">Select a table</option>
+        </select>
+        
+        <input type="number" id="rowLimit" min="1" max="100" value="10" placeholder="Number of rows">
+        
+        <button class="btn-primary" onclick="viewTable()">View Table</button>
+    </div>
+
+    <div id="output" class="output"></div>
+    
+    <div id="tableViewer" class="table-viewer">
+        <!-- Table will be displayed here -->
+    </div>
+</div>
+
+<script>
+    // Load available tables when the page loads
+    document.addEventListener('DOMContentLoaded', loadTables);
+
+    async function loadTables() {
+        try {
+            const response = await fetch('http://localhost:3000/tables');
+            const data = await response.json();
+            
+            const tableSelect = document.getElementById('tableSelect');
+            
+            data.tables.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table;
+                option.textContent = table;
+                tableSelect.appendChild(option);
+            });
+        } catch (error) {
+            displayError('Error loading tables: ' + error.message);
+        }
+    }
+
+    async function viewTable() {
+        const tableName = document.getElementById('tableSelect').value;
+        const rowLimit = document.getElementById('rowLimit').value;
+        
+        if (!tableName) {
+            displayError('Please select a table');
+            return;
+        }
+        
+        if (!rowLimit || rowLimit < 1) {
+            displayError('Please enter a valid number of rows');
+            return;
+        }
+        
+        try {
+            showLoading(`Loading data from ${tableName}...`);
+            
+            const response = await fetch(`http://localhost:3000/view-table?tableName=${tableName}&limit=${rowLimit}`);
+            const data = await response.json();
+            
+            if (response.ok) {
+                displayTableData(data, tableName);
+            } else {
+                displayError('Error: ' + data.error);
+            }
+        } catch (error) {
+            displayError('Error fetching data: ' + error.message);
+        }
+    }
+    
+    function displayTableData(data, tableName) {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        output.className = '';
+        
+        const tableViewer = document.getElementById('tableViewer');
+        tableViewer.innerHTML = '';
+        
+        const container = document.querySelector('.container');
+        
+        // Adjust container width based on column count and table type
+        const columnCount = data.columns.length;
+        
+        // Remove existing width classes
+        container.classList.remove('wide', 'extra-wide');
+        
+        // Add appropriate width class based on column count
+        if (columnCount > 6) {
+            container.classList.add('wide'); // 1200px
+        }
+        if (columnCount > 10) {
+            container.classList.remove('wide');
+            container.classList.add('extra-wide'); // 1600px
+        }
+        
+        // If specific tables are known to need more width
+        if (tableName === 'publications' || tableName === 'publication_citations') {
+            container.classList.add('wide');
+        }
+        
+        // Create table element
+        const table = document.createElement('table');
+        table.className = 'data-table';
+        
+        // Create table header
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        
+        data.columns.forEach(column => {
+            const th = document.createElement('th');
+            th.textContent = column.column_name;
+            th.title = column.data_type;
+            
+            // Calculate optimal width based on content
+            const columnWidth = calculateColumnWidth(column.column_name, data.data);
+            th.style.width = columnWidth;
+            
+            // Still keep some minimum widths for important columns
+            if (column.column_name === 'key') {
+                th.style.minWidth = '180px';
+            } else if (column.column_name === 'title' || column.column_name === 'booktitle') {
+                th.style.minWidth = '200px';
+            }
+            
+            headerRow.appendChild(th);
+        });
+        
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+        
+        // Create table body
+        const tbody = document.createElement('tbody');
+        
+        if (data.data.length === 0) {
+            const emptyRow = document.createElement('tr');
+            const emptyCell = document.createElement('td');
+            emptyCell.colSpan = data.columns.length;
+            emptyCell.textContent = 'No data found';
+            emptyCell.style.textAlign = 'center';
+            emptyRow.appendChild(emptyCell);
+            tbody.appendChild(emptyRow);
+        } else {
+            data.data.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                data.columns.forEach(column => {
+                    const td = document.createElement('td');
+                    const value = row[column.column_name];
+                    
+                    // Apply the same width as the header for consistency
+                    td.style.width = calculateColumnWidth(column.column_name, data.data);
+                    
+                    // Format the value based on its type
+                    if (value === null) {
+                        td.innerHTML = '<span style="color: #999;">NULL</span>';
+                    } else if (typeof value === 'object' && value instanceof Date) {
+                        td.textContent = value.toISOString().split('T')[0];
+                    } else if (typeof value === 'object') {
+                        td.textContent = JSON.stringify(value);
+                    } else {
+                        td.textContent = String(value);
+                    }
+                    
+                    tr.appendChild(td);
+                });
+                
+                tbody.appendChild(tr);
+            });
+        }
+        
+        table.appendChild(tbody);
+        tableViewer.appendChild(table);
+        
+        // Add row information
+        const rowInfo = document.createElement('div');
+        rowInfo.className = 'row-info';
+        rowInfo.textContent = `Showing ${data.returnedRows} of ${data.totalRows} total rows in "${tableName}" table`;
+        tableViewer.appendChild(rowInfo);
+    }
+    
+    function showLoading(message) {
+        const output = document.getElementById('output');
+        output.className = 'loading';
+        output.textContent = message;
+        
+        document.getElementById('tableViewer').innerHTML = '';
+    }
+    
+    function displayError(message) {
+        const output = document.getElementById('output');
+        output.className = 'error';
+        output.textContent = message;
+    }
+    
+    // Function to calculate appropriate column width based on content
+    function calculateColumnWidth(columnName, data) {
+        // Default min widths
+        const minWidths = {
+            key: 180,
+            type: 100,
+            title: 200,
+            booktitle: 200,
+            pages: 80,
+            year: 70,
+            default: 100
+        };
+        
+        // Get the min width for this column type
+        const minWidth = minWidths[columnName] || minWidths.default;
+        
+        // Check if we have any data to analyze
+        if (!data || data.length === 0) {
+            return `${minWidth}px`;
+        }
+        
+        // Find the maximum content length for this column
+        let maxLength = columnName.length * 10; // Starting with header length
+        
+        data.forEach(row => {
+            const value = row[columnName];
+            if (value !== null && value !== undefined) {
+                // For string values, estimate width based on length
+                if (typeof value === 'string') {
+                    // Calculate approximate width (10px per character, but with diminishing returns)
+                    const contentLength = Math.min(value.length, 50) * 10;
+                    maxLength = Math.max(maxLength, contentLength);
+                }
+            }
+        });
+        
+        // Cap the width to a reasonable maximum
+        const maxWidth = 400;
+        return `${Math.min(Math.max(maxLength, minWidth), maxWidth)}px`;
+    }
+</script>
+
+</body>
+</html> 

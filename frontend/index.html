@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Author-Reviewer Conflict & Diversity Checker</title>
+    <link rel="stylesheet" href="styles/style.css">
+    <style>
+        .nav-links {
+            margin-bottom: 20px;
+            text-align: right;
+        }
+        .nav-links a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="nav-links">
+        <a href="view-tables.html">View Database Tables</a>
+        <a href="recommend-reviewers.html">Recommend Reviewers</a>
+    </div>
+
+    <h2>Author-Reviewer Conflict Checker</h2>
+
+    <label for="authorIds">Enter Author IDs (comma-separated):</label>
+    <input type="text" id="authorIds" placeholder="e.g., A1, A2, A3">
+
+    <label for="reviewerIds">Enter Reviewer IDs (comma-separated):</label>
+    <input type="text" id="reviewerIds" placeholder="e.g., R1, R2, R3">
+
+    <label for="years">Number of Years for Recent Coauthorship:</label>
+    <input type="number" id="years" min="1" placeholder="e.g., 5">
+
+    <label for="coauthorThreshold">Coauthorship Threshold (N):</label>
+    <input type="number" id="coauthorThreshold" min="1" placeholder="e.g., 3">
+
+    <label for="yearThreshold">Number of Years for Coauthorship Threshold:</label>
+    <input type="number" id="yearThreshold" min="1" placeholder="e.g., 10">
+
+    <div style="display: flex; justify-content: space-between;">
+        <button class="btn-primary" onclick="checkConflicts()">Check Conflicts</button>
+        <button class="btn-secondary" onclick="resetForm()">Reset</button>
+    </div>
+
+    <div id="output" class="output"></div>
+</div>
+
+<script>
+    async function checkConflicts() {
+        const authorIds = document.getElementById('authorIds').value.split(',').map(id => id.trim());
+        const reviewerIds = document.getElementById('reviewerIds').value.split(',').map(id => id.trim());
+        const years = parseInt(document.getElementById('years').value, 10); // Explicitly cast to integer
+        const coauthorThreshold = parseInt(document.getElementById('coauthorThreshold').value, 10); // Explicitly cast to integer
+        const yearThreshold = parseInt(document.getElementById('yearThreshold').value, 10); // Explicitly cast to integer
+
+        // Validate input
+        if (authorIds.length === 0 || reviewerIds.length === 0 || isNaN(years) || isNaN(coauthorThreshold) || isNaN(yearThreshold)) {
+            displayError("Please fill in all fields with valid values.");
+            return;
+        }
+
+        showLoading("Checking for conflicts...");
+
+        try {
+            const response = await fetch('http://localhost:3000/check-conflicts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ authorIds, reviewerIds, years, coauthorThreshold, yearThreshold })
+            });
+            const data = await response.json();
+            displayResult(data);
+        } catch (error) {
+            displayError('Error connecting to the server.');
+            console.error('Error:', error);
+        }
+    }
+
+    function showLoading(message) {
+        const output = document.getElementById('output');
+        output.className = 'loading';
+        output.textContent = message;
+    }
+
+    function displayResult(data) {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+
+        if (data.conflicts) {
+            if (data.conflicts.recentCoauthorshipConflicts.length > 0) {
+                output.innerHTML += '<h3>Recent Coauthorship Conflicts</h3>';
+                output.innerHTML += generateConflictTable1(data.conflicts.recentCoauthorshipConflicts);
+            } else {
+                output.innerHTML += '<p>No recent coauthorship conflicts found.</p>';
+            }
+
+            if (data.conflicts.frequentCoauthorshipConflicts.length > 0) {
+                output.innerHTML += '<h3>Frequent Coauthorship Conflicts</h3>';
+                output.innerHTML += generateConflictTable2(data.conflicts.frequentCoauthorshipConflicts);
+            } else {
+                output.innerHTML += '<p>No frequent coauthorship conflicts found.</p>';
+            }
+        } else {
+            output.className = 'no-conflicts';
+            output.textContent = 'No conflicts found.';
+        }
+    }
+
+    function generateConflictTable1(conflicts) {
+        let table = '<table class="conflict-table"><thead><tr><th>Author ID</th><th>Reviewer ID</th><th>Publication Key</th></tr></thead><tbody>';
+        conflicts.forEach(conflict => {
+            table += `<tr><td>${conflict.author_id}</td><td>${conflict.reviewer_id}</td><td>${conflict.publication_key || 'N/A'}</td></tr>`;
+        });
+        table += '</tbody></table>';
+        return table;
+    }
+
+    function generateConflictTable2(conflicts) {
+        let table = '<table class="conflict-table"><thead><tr><th>Author ID</th><th>Reviewer ID</th><th>Co-Authored Papers</th></tr></thead><tbody>';
+        conflicts.forEach(conflict => {
+            table += `<tr><td>${conflict.author_id}</td><td>${conflict.reviewer_id}</td><td>${conflict.coauthored_papers || 'N/A'}</td></tr>`;
+        });
+        table += '</tbody></table>';
+        return table;
+    }
+
+    function displayError(message) {
+        const output = document.getElementById('output');
+        output.className = 'error';
+        output.textContent = message;
+    }
+
+    function resetForm() {
+        document.getElementById('authorIds').value = '';
+        document.getElementById('reviewerIds').value = '';
+        document.getElementById('years').value = '';
+        document.getElementById('coauthorThreshold').value = '';
+        document.getElementById('yearThreshold').value = '';
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        output.className = '';
+    }
+</script>
+
+</body>
+</html>
