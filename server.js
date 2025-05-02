@@ -76,7 +76,7 @@ app.get('/view-table', async (req, res) => {
     const rowLimit = parseInt(limit) || 10; // Default to 10 rows if limit is not provided
 
     // List of allowed tables for security
-    const allowedTables = ['publications', 'persons', 'publication_authors', 'publication_editors', 'publication_citations'];
+    const allowedTables = ['publications', 'persons', 'publication_authors', 'publication_editors', 'publication_citations', 'author_affiliations'];
     
     if (!tableName || !allowedTables.includes(tableName)) {
         return res.status(400).json({ error: 'Invalid table name' });
@@ -369,6 +369,169 @@ app.post('/recommend-reviewers', async (req, res) => {
             recommendedReviewers: selectedReviewers,
             totalEligible: eligibleReviewers.length,
             totalWithConflicts: conflictReviewers.size - authorIds.length
+        });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// New endpoint to check shared publications between two authors
+app.get('/shared-publications', async (req, res) => {
+    const { author1, author2 } = req.query;
+    
+    if (!author1 || !author2) {
+        return res.status(400).json({ error: 'Both author IDs are required' });
+    }
+    
+    try {
+        // Get shared publications
+        const sharedPublicationsQuery = await pool.query(`
+            SELECT p.key, p.title, p.year, p.journal, p.volume, p.number, p.pages, p.url
+            FROM publications p
+            JOIN publication_authors pa1 ON p.key = pa1.publication_key
+            JOIN publication_authors pa2 ON p.key = pa2.publication_key
+            WHERE pa1.person_key = $1 AND pa2.person_key = $2
+            ORDER BY p.year DESC
+        `, [author1, author2]);
+        
+        // Get author names
+        const namesQuery = await pool.query(`
+            SELECT key, name FROM persons
+            WHERE key = ANY($1::text[])
+        `, [[author1, author2]]);
+        
+        // Create a map of ID to name
+        const nameMap = {};
+        namesQuery.rows.forEach(row => {
+            nameMap[row.key] = row.name;
+        });
+        
+        res.json({
+            author1: { id: author1, name: nameMap[author1] || 'Unknown' },
+            author2: { id: author2, name: nameMap[author2] || 'Unknown' },
+            sharedPublications: sharedPublicationsQuery.rows,
+            count: sharedPublicationsQuery.rows.length
+        });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// New endpoint to get an author's publication history
+app.get('/author-publications', async (req, res) => {
+    const { authorId } = req.query;
+    
+    if (!authorId) {
+        return res.status(400).json({ error: 'Author ID is required' });
+    }
+    
+    try {
+        // Get author's publications
+        const publicationsQuery = await pool.query(`
+            SELECT p.key, p.title, p.year, p.journal, p.volume, p.number, p.pages, p.url
+            FROM publications p
+            JOIN publication_authors pa ON p.key = pa.publication_key
+            WHERE pa.person_key = $1
+            ORDER BY p.year DESC
+        `, [authorId]);
+        
+        // Get author name
+        const nameQuery = await pool.query(`
+            SELECT name FROM persons
+            WHERE key = $1
+        `, [authorId]);
+        
+        // Get publication venues breakdown
+        const venuesQuery = await pool.query(`
+            SELECT p.journal, COUNT(*) as count
+            FROM publications p
+            JOIN publication_authors pa ON p.key = pa.publication_key
+            WHERE pa.person_key = $1 AND p.journal IS NOT NULL
+            GROUP BY p.journal
+            ORDER BY count DESC
+        `, [authorId]);
+        
+        // Get years activity
+        const yearsQuery = await pool.query(`
+            SELECT p.year, COUNT(*) as count
+            FROM publications p
+            JOIN publication_authors pa ON p.key = pa.publication_key
+            WHERE pa.person_key = $1 AND p.year IS NOT NULL
+            GROUP BY p.year
+            ORDER BY p.year DESC
+        `, [authorId]);
+        
+        res.json({
+            author: { 
+                id: authorId, 
+                name: nameQuery.rows.length > 0 ? nameQuery.rows[0].name : 'Unknown' 
+            },
+            publications: publicationsQuery.rows,
+            publicationCount: publicationsQuery.rows.length,
+            venueBreakdown: venuesQuery.rows,
+            yearlyActivity: yearsQuery.rows
+        });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// This is the afiliation part (remove if not needed)
+// New endpoint to get author affiliations
+app.get('/author-affiliations', async (req, res) => {
+    const { authorId } = req.query;
+    
+    if (!authorId) {
+        return res.status(400).json({ error: 'Author ID is required' });
+    }
+    
+    try {
+        // Check if we have affiliations in our database
+        const existingAffiliationsQuery = await pool.query(`
+            SELECT institution_name, city, country, COUNT(*) as frequency
+            FROM author_affiliations
+            WHERE author_key = $1
+            GROUP BY institution_name, city, country
+            ORDER BY frequency DESC
+        `, [authorId]);
+        
+        // If we have affiliations, return them
+        if (existingAffiliationsQuery.rows.length > 0) {
+            return res.json({
+                author: authorId,
+                affiliations: existingAffiliationsQuery.rows
+            });
+        }
+        
+        // Otherwise, we need to look for publications with DOIs
+        const publicationsQuery = await pool.query(`
+            SELECT p.key, p.title, p.ee
+            FROM publications p
+            JOIN publication_authors pa ON p.key = pa.publication_key
+            WHERE pa.person_key = $1 AND p.ee LIKE '%doi.org%'
+            LIMIT 5
+        `, [authorId]);
+        
+        if (publicationsQuery.rows.length === 0) {
+            return res.json({
+                author: authorId,
+                message: "No publications with DOIs found for this author. Run the Python script to fetch affiliations from OpenAlex API.",
+                affiliations: []
+            });
+        }
+        
+        // We can tell the client to run the Python script to populate the data
+        res.json({
+            author: authorId,
+            message: "Author has publications with DOIs but no affiliation data yet. Run the Python script to fetch data from OpenAlex API.",
+            publications: publicationsQuery.rows.map(pub => ({
+                key: pub.key,
+                title: pub.title,
+                ee: pub.ee
+            }))
         });
     } catch (error) {
         console.error('Error:', error);

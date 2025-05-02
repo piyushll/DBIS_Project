@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Author Profile & Collaboration Viewer</title>
+    <link rel="stylesheet" href="styles/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Author Profile & Collaboration Viewer</h1>
+            <nav>
+                <ul>
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="view-tables.html">View Tables</a></li>
+                    <li><a href="recommend-reviewers.html">Recommend Reviewers</a></li>
+                    <li><a href="author-profile.html" class="active">Author Profiles</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('profile')">Author Profile</button>
+            <button class="tab-button" onclick="showTab('collaboration')">Collaboration History</button>
+        </div>
+
+        <section id="profile" class="tab-content">
+            <h2>Author Profile</h2>
+            <div class="form-container">
+                <div class="form-group">
+                    <label for="authorId">Author ID:</label>
+                    <input type="text" id="authorId" placeholder="e.g., person/Manish_Singh_0001">
+                </div>
+                <button onclick="fetchAuthorProfile()" class="btn">View Profile</button>
+            </div>
+
+            <div id="profileResults" class="results-container" style="display: none;">
+                <div class="profile-header">
+                    <h3 id="authorName">Author Name</h3>
+                    <p id="authorStats">Publications: <span id="pubCount">0</span></p>
+                </div>
+
+                <div class="charts-container">
+                    <div class="chart-box">
+                        <h4>Publications by Year</h4>
+                        <canvas id="yearlyChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h4>Publication Venues</h4>
+                        <canvas id="venueChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- New section for institutional affiliations -->
+                <div class="affiliations-section">
+                    <h3>Institutional Affiliations</h3>
+                    <div id="affiliationsLoading" style="display: none;">Loading affiliations data...</div>
+                    <div id="affiliationsMessage" style="display: none;" class="info-message"></div>
+                    <div id="affiliationsContainer" style="display: none;">
+                        <table id="affiliationsTable">
+                            <thead>
+                                <tr>
+                                    <th>Institution</th>
+                                    <th>City</th>
+                                    <th>Country</th>
+                                    <th>Frequency</th>
+                                </tr>
+                            </thead>
+                            <tbody id="affiliationsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <h3>Publications</h3>
+                <div class="table-container">
+                    <table id="publicationsTable">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Title</th>
+                                <th>Venue</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="publicationsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="collaboration" class="tab-content" style="display: none;">
+            <h2>Author Collaboration History</h2>
+            <div class="form-container">
+                <div class="form-group">
+                    <label for="author1">Author 1 ID:</label>
+                    <input type="text" id="author1" placeholder="e.g., person/Manish_Singh_0001">
+                </div>
+                <div class="form-group">
+                    <label for="author2">Author 2 ID:</label>
+                    <input type="text" id="author2" placeholder="e.g., person/John_Doe_0001">
+                </div>
+                <button onclick="fetchSharedPublications()" class="btn">Check Collaboration</button>
+            </div>
+
+            <div id="collaborationResults" class="results-container" style="display: none;">
+                <div class="collaboration-header">
+                    <h3>Collaboration between <span id="author1Name">Author 1</span> and <span id="author2Name">Author 2</span></h3>
+                    <p id="collaborationStats">Shared Publications: <span id="sharedCount">0</span></p>
+                </div>
+
+                <h3>Shared Publications</h3>
+                <div class="table-container">
+                    <table id="sharedPublicationsTable">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Title</th>
+                                <th>Venue</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sharedPublicationsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Chart instances
+        let yearlyChartInstance = null;
+        let venueChartInstance = null;
+        
+        // Tab functionality
+        function showTab(tabId) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(tab => tab.style.display = 'none');
+            
+            // Remove active class from all buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => button.classList.remove('active'));
+            
+            // Show the selected tab content and activate the button
+            document.getElementById(tabId).style.display = 'block';
+            event.currentTarget.classList.add('active');
+            
+            // If switching tabs, make sure any displayed charts are destroyed
+            destroyCharts();
+        }
+
+        // Function to destroy existing charts
+        function destroyCharts() {
+            if (yearlyChartInstance) {
+                yearlyChartInstance.destroy();
+                yearlyChartInstance = null;
+            }
+            
+            if (venueChartInstance) {
+                venueChartInstance.destroy();
+                venueChartInstance = null;
+            }
+        }
+
+        // Fetch author profile data
+        async function fetchAuthorProfile() {
+            const authorId = document.getElementById('authorId').value.trim();
+            if (!authorId) {
+                alert('Please enter an Author ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/author-publications?authorId=${encodeURIComponent(authorId)}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error fetching author profile');
+                }
+                
+                displayAuthorProfile(data);
+                // Also fetch and display author affiliations
+                fetchAuthorAffiliations(authorId);
+            } catch (error) {
+                alert('Error: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        // Display author profile data
+        function displayAuthorProfile(data) {
+            // Show results container
+            document.getElementById('profileResults').style.display = 'block';
+            
+            // Update author info
+            document.getElementById('authorName').textContent = data.author.name;
+            document.getElementById('pubCount').textContent = data.publicationCount;
+            
+            // Clear publications table
+            const publicationsBody = document.getElementById('publicationsBody');
+            publicationsBody.innerHTML = '';
+            
+            // Add publications to table
+            data.publications.forEach(pub => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${pub.year || 'N/A'}</td>
+                    <td>${pub.title || 'Untitled'}</td>
+                    <td>${pub.journal || 'N/A'}</td>
+                    <td>
+                        ${pub.volume ? `Vol: ${pub.volume}` : ''}
+                        ${pub.number ? `No: ${pub.number}` : ''}
+                        ${pub.pages ? `Pages: ${pub.pages}` : ''}
+                        ${pub.url ? `<a href="${pub.url}" target="_blank">Link</a>` : ''}
+                    </td>
+                `;
+                publicationsBody.appendChild(row);
+            });
+            
+            // Destroy existing charts before creating new ones
+            destroyCharts();
+            
+            // Create yearly activity chart
+            const years = data.yearlyActivity.map(item => item.year);
+            const yearCounts = data.yearlyActivity.map(item => item.count);
+            
+            const yearlyChartCanvas = document.getElementById('yearlyChart');
+            yearlyChartInstance = new Chart(yearlyChartCanvas, {
+                type: 'bar',
+                data: {
+                    labels: years,
+                    datasets: [{
+                        label: 'Publications per Year',
+                        data: yearCounts,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Create venue breakdown chart
+            // Limit to top 10 venues for readability
+            const venueData = data.venueBreakdown.slice(0, 10);
+            const venues = venueData.map(item => {
+                // Truncate long venue names
+                const venueName = item.journal;
+                return venueName.length > 20 ? venueName.substring(0, 20) + '...' : venueName;
+            });
+            const venueCounts = venueData.map(item => item.count);
+            
+            const venueChartCanvas = document.getElementById('venueChart');
+            venueChartInstance = new Chart(venueChartCanvas, {
+                type: 'pie',
+                data: {
+                    labels: venues,
+                    datasets: [{
+                        data: venueCounts,
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.6)',
+                            'rgba(54, 162, 235, 0.6)',
+                            'rgba(255, 206, 86, 0.6)',
+                            'rgba(75, 192, 192, 0.6)',
+                            'rgba(153, 102, 255, 0.6)',
+                            'rgba(255, 159, 64, 0.6)',
+                            'rgba(199, 199, 199, 0.6)',
+                            'rgba(83, 102, 255, 0.6)',
+                            'rgba(40, 159, 64, 0.6)',
+                            'rgba(210, 199, 199, 0.6)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        }
+                    }
+                }
+            });
+        }
+
+        // Fetch shared publications
+        async function fetchSharedPublications() {
+            const author1 = document.getElementById('author1').value.trim();
+            const author2 = document.getElementById('author2').value.trim();
+            
+            if (!author1 || !author2) {
+                alert('Please enter both Author IDs');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/shared-publications?author1=${encodeURIComponent(author1)}&author2=${encodeURIComponent(author2)}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error fetching shared publications');
+                }
+                
+                displaySharedPublications(data);
+            } catch (error) {
+                alert('Error: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        // Display shared publications
+        function displaySharedPublications(data) {
+            // Show results container
+            document.getElementById('collaborationResults').style.display = 'block';
+            
+            // Update author names and counts
+            document.getElementById('author1Name').textContent = data.author1.name;
+            document.getElementById('author2Name').textContent = data.author2.name;
+            document.getElementById('sharedCount').textContent = data.count;
+            
+            // Clear shared publications table
+            const sharedPublicationsBody = document.getElementById('sharedPublicationsBody');
+            sharedPublicationsBody.innerHTML = '';
+            
+            // If no shared publications
+            if (data.count === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td colspan="4" class="no-data">No shared publications found between these authors.</td>`;
+                sharedPublicationsBody.appendChild(row);
+                return;
+            }
+            
+            // Add shared publications to table
+            data.sharedPublications.forEach(pub => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${pub.year || 'N/A'}</td>
+                    <td>${pub.title || 'Untitled'}</td>
+                    <td>${pub.journal || 'N/A'}</td>
+                    <td>
+                        ${pub.volume ? `Vol: ${pub.volume}` : ''}
+                        ${pub.number ? `No: ${pub.number}` : ''}
+                        ${pub.pages ? `Pages: ${pub.pages}` : ''}
+                        ${pub.url ? `<a href="${pub.url}" target="_blank">Link</a>` : ''}
+                    </td>
+                `;
+                sharedPublicationsBody.appendChild(row);
+            });
+        }
+
+        // Fetch author affiliations
+        async function fetchAuthorAffiliations(authorId) {
+            // Show loading indicator
+            const loadingElem = document.getElementById('affiliationsLoading');
+            const messageElem = document.getElementById('affiliationsMessage');
+            const containerElem = document.getElementById('affiliationsContainer');
+            
+            loadingElem.style.display = 'block';
+            messageElem.style.display = 'none';
+            containerElem.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/author-affiliations?authorId=${encodeURIComponent(authorId)}`);
+                const data = await response.json();
+                
+                loadingElem.style.display = 'none';
+                
+                if (data.affiliations && data.affiliations.length > 0) {
+                    displayAffiliations(data.affiliations);
+                } else {
+                    // Show appropriate message
+                    messageElem.style.display = 'block';
+                    messageElem.textContent = data.message || 'No affiliation data available for this author.';
+                }
+            } catch (error) {
+                loadingElem.style.display = 'none';
+                messageElem.style.display = 'block';
+                messageElem.textContent = 'Error loading affiliation data.';
+                console.error('Error fetching affiliations:', error);
+            }
+        }
+        
+        // Display affiliations data
+        function displayAffiliations(affiliations) {
+            const tableBody = document.getElementById('affiliationsBody');
+            const containerElem = document.getElementById('affiliationsContainer');
+            
+            tableBody.innerHTML = '';
+            
+            affiliations.forEach(affiliation => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${affiliation.institution_name || 'Unknown'}</td>
+                    <td>${affiliation.city || 'Unknown'}</td>
+                    <td>${affiliation.country || 'Unknown'}</td>
+                    <td>${affiliation.frequency || 1}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // Show the affiliations table
+            containerElem.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 
