@@ -54,12 +54,47 @@ app.post('/check-conflicts', async (req, res) => {
             HAVING COUNT(pa.publication_key) >= $4::integer
         `, [authorIds, reviewerIds, yearThreshold, coauthorThreshold]);
 
+        // Conflict 3: Same institution
+        const institutionalConflicts = await pool.query(`
+            SELECT a_aff.author_key AS author_id, r_aff.author_key AS reviewer_id, 
+                   a_aff.institution_name, a_aff.city, a_aff.country
+            FROM author_affiliations a_aff
+            JOIN author_affiliations r_aff ON 
+                LOWER(a_aff.institution_name) = LOWER(r_aff.institution_name)
+            WHERE a_aff.author_key = ANY($1::text[])
+              AND r_aff.author_key = ANY($2::text[])
+              AND a_aff.author_key != r_aff.author_key
+        `, [authorIds, reviewerIds]);
+
+        console.log('Institutional Conflicts Query Results:');
+        console.log(institutionalConflicts.rows);
+        
+        // Additional diagnostic queries
+        console.log('Running diagnostic queries for author and reviewer affiliations...');
+        const authorAffiliationsQuery = await pool.query(`
+            SELECT author_key, institution_name
+            FROM author_affiliations
+            WHERE author_key = ANY($1::text[])
+        `, [authorIds]);
+        
+        const reviewerAffiliationsQuery = await pool.query(`
+            SELECT author_key, institution_name
+            FROM author_affiliations
+            WHERE author_key = ANY($1::text[])
+        `, [reviewerIds]);
+        
+        console.log('Author affiliations:', authorAffiliationsQuery.rows);
+        console.log('Reviewer affiliations:', reviewerAffiliationsQuery.rows);
+
         const conflicts = {
             recentCoauthorshipConflicts: recentCoauthorshipConflicts.rows,
             frequentCoauthorshipConflicts: frequentCoauthorshipConflicts.rows,
+            institutionalConflicts: institutionalConflicts.rows
         };
 
-        if (conflicts.recentCoauthorshipConflicts.length === 0 && conflicts.frequentCoauthorshipConflicts.length === 0) {
+        if (conflicts.recentCoauthorshipConflicts.length === 0 && 
+            conflicts.frequentCoauthorshipConflicts.length === 0 &&
+            conflicts.institutionalConflicts.length === 0) {
             return res.json({ message: "No conflicts found." });
         }
 
@@ -183,6 +218,16 @@ app.post('/recommend-reviewers', async (req, res) => {
             HAVING COUNT(DISTINCT pa1.publication_key) >= $3::integer
         `, [authorIds, yearThreshold, coauthorThreshold]);
         
+        // NEW: Find institutional conflicts - authors and reviewers from same institutions
+        const institutionalConflicts = await pool.query(`
+            SELECT DISTINCT r_aff.author_key AS reviewer_id
+            FROM author_affiliations a_aff
+            JOIN author_affiliations r_aff ON 
+                LOWER(a_aff.institution_name) = LOWER(r_aff.institution_name) AND
+                a_aff.author_key != r_aff.author_key
+            WHERE a_aff.author_key = ANY($1::text[])
+        `, [authorIds]);
+        
         // Create a set of all reviewer IDs with conflicts
         const conflictReviewers = new Set();
         
@@ -194,6 +239,9 @@ app.post('/recommend-reviewers', async (req, res) => {
         
         // Add frequent coauthor conflicts
         frequentCoauthorConflicts.rows.forEach(row => conflictReviewers.add(row.reviewer_id));
+        
+        // Add institutional conflicts
+        institutionalConflicts.rows.forEach(row => conflictReviewers.add(row.reviewer_id));
         
         // Step 3: Filter out the conflicts from potential reviewers
         const eligibleReviewers = potentialReviewers.rows.filter(
@@ -230,12 +278,23 @@ app.post('/recommend-reviewers', async (req, res) => {
                 WHERE pa1.person_key = $1
             `, [reviewer.person_key]);
             
+            // NEW: Get institutions for the reviewer
+            const institutionsQuery = await pool.query(`
+                SELECT institution_name, city, country, COUNT(*) as frequency
+                FROM author_affiliations
+                WHERE author_key = $1
+                GROUP BY institution_name, city, country
+                ORDER BY frequency DESC
+                LIMIT 3
+            `, [reviewer.person_key]);
+            
             return {
                 person_key: reviewer.person_key,
                 publication_count: reviewer.publication_count,
                 venues: venuesQuery.rows,
                 years_active: yearsQuery.rows[0],
-                coauthor_count: coauthorsQuery.rows[0]?.coauthor_count || 0
+                coauthor_count: coauthorsQuery.rows[0]?.coauthor_count || 0,
+                institutions: institutionsQuery.rows // NEW: Add institutions
             };
         });
         
@@ -257,6 +316,19 @@ app.post('/recommend-reviewers', async (req, res) => {
             });
         });
         
+        // NEW: Count institutions for institutional diversity
+        const institutionFrequency = {};
+        reviewerDetails.forEach(reviewer => {
+            if (reviewer.institutions) {
+                reviewer.institutions.forEach(inst => {
+                    if (!institutionFrequency[inst.institution_name]) {
+                        institutionFrequency[inst.institution_name] = 0;
+                    }
+                    institutionFrequency[inst.institution_name]++;
+                });
+            }
+        });
+        
         // Score each reviewer
         reviewerDetails.forEach(reviewer => {
             // Base score from publication count (experience)
@@ -270,6 +342,17 @@ app.post('/recommend-reviewers', async (req, res) => {
                 venueDiversityScore += venueRarity * 2;
             });
             score += venueDiversityScore;
+            
+            // NEW: Institution diversity score
+            let institutionDiversityScore = 0;
+            if (reviewer.institutions) {
+                reviewer.institutions.forEach(inst => {
+                    // Institutions that are less common among other reviewers get higher scores
+                    const instRarity = 1 / (institutionFrequency[inst.institution_name] || 1);
+                    institutionDiversityScore += instRarity * 2;
+                });
+                score += institutionDiversityScore;
+            }
             
             // Experience score based on years active
             if (reviewer.years_active && reviewer.years_active.first_year && reviewer.years_active.last_year) {
@@ -290,6 +373,7 @@ app.post('/recommend-reviewers', async (req, res) => {
         // Step 6: Select top N reviewers, but ensure diversity
         const selectedReviewers = [];
         const selectedVenues = new Set();
+        const selectedInstitutions = new Set(); // NEW: Track selected institutions
         let nextCandidateIndex = 0;
         
         // Helper to check if a reviewer adds diversity
@@ -304,6 +388,15 @@ app.post('/recommend-reviewers', async (req, res) => {
                 }
             }
             
+            // NEW: Check if this reviewer is from institutions we haven't covered yet
+            if (reviewer.institutions) {
+                for (const inst of reviewer.institutions) {
+                    if (!selectedInstitutions.has(inst.institution_name)) {
+                        return true;
+                    }
+                }
+            }
+            
             return false;
         };
         
@@ -312,6 +405,10 @@ app.post('/recommend-reviewers', async (req, res) => {
             const topReviewer = reviewerDetails[0];
             selectedReviewers.push(topReviewer);
             topReviewer.venues.forEach(venue => selectedVenues.add(venue.journal));
+            // NEW: Add institutions to tracked set
+            if (topReviewer.institutions) {
+                topReviewer.institutions.forEach(inst => selectedInstitutions.add(inst.institution_name));
+            }
             nextCandidateIndex = 1;
         }
         
@@ -327,6 +424,10 @@ app.post('/recommend-reviewers', async (req, res) => {
                     if (addsDiversity(reviewer)) {
                         selectedReviewers.push(reviewer);
                         reviewer.venues.forEach(venue => selectedVenues.add(venue.journal));
+                        // NEW: Add institutions to tracked set
+                        if (reviewer.institutions) {
+                            reviewer.institutions.forEach(inst => selectedInstitutions.add(inst.institution_name));
+                        }
                         reviewerDetails.splice(i, 1);
                         diverseReviewerFound = true;
                         break;
@@ -337,12 +438,22 @@ app.post('/recommend-reviewers', async (req, res) => {
                 if (!diverseReviewerFound && nextCandidateIndex < reviewerDetails.length) {
                     selectedReviewers.push(reviewerDetails[nextCandidateIndex]);
                     reviewerDetails[nextCandidateIndex].venues.forEach(venue => selectedVenues.add(venue.journal));
+                    // NEW: Add institutions to tracked set
+                    if (reviewerDetails[nextCandidateIndex].institutions) {
+                        reviewerDetails[nextCandidateIndex].institutions.forEach(inst => 
+                            selectedInstitutions.add(inst.institution_name));
+                    }
                     nextCandidateIndex++;
                 }
             } else {
                 // Pick next best by score
                 selectedReviewers.push(reviewerDetails[nextCandidateIndex]);
                 reviewerDetails[nextCandidateIndex].venues.forEach(venue => selectedVenues.add(venue.journal));
+                // NEW: Add institutions to tracked set
+                if (reviewerDetails[nextCandidateIndex].institutions) {
+                    reviewerDetails[nextCandidateIndex].institutions.forEach(inst => 
+                        selectedInstitutions.add(inst.institution_name));
+                }
                 nextCandidateIndex++;
             }
         }

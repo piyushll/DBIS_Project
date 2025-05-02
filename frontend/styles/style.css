@@ -326,6 +326,31 @@ table td {
     font-style: italic;
 }
 
+/* Reviewer cards institution styling */
+.institution-list {
+    margin-top: 5px;
+    margin-bottom: 15px;
+}
+
+.institution-item {
+    background-color: #e8f5e9;
+    padding: 8px 12px;
+    margin-bottom: 5px;
+    border-radius: 4px;
+    border-left: 3px solid #4caf50;
+    font-size: 14px;
+}
+
+.institution-item strong {
+    display: block;
+    color: #2e7d32;
+}
+
+.institution-item span {
+    color: #555;
+    font-size: 12px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .charts-container {

@@ -32,3 +32,4 @@ Thumbs.db
 *.swp
 *.swo affiliation_checkpoint.json
 openalex_affiliation.log
+affiliation_checkpoint.json

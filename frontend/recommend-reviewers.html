@@ -231,6 +231,20 @@
             }
             venuesList += '</div>';
             
+            // NEW: Format institutions
+            let institutionsList = '<div class="institution-list">';
+            if (reviewer.institutions && reviewer.institutions.length > 0) {
+                reviewer.institutions.forEach(inst => {
+                    institutionsList += `<div class="institution-item">
+                        <strong>${inst.institution_name}</strong>
+                        ${inst.city && inst.country ? `<span>(${inst.city}, ${inst.country})</span>` : ''}
+                    </div>`;
+                });
+            } else {
+                institutionsList += '<div class="institution-item">No institutional affiliation data available</div>';
+            }
+            institutionsList += '</div>';
+            
             card.innerHTML = `
                 <div class="reviewer-score">${reviewer.score}</div>
                 <div class="reviewer-header">
@@ -256,6 +270,10 @@
                 <div>
                     <div class="stat-label">Top Publication Venues:</div>
                     ${venuesList}
+                </div>
+                <div>
+                    <div class="stat-label">Institutional Affiliations:</div>
+                    ${institutionsList}
                 </div>
             `;
             

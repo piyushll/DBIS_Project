@@ -115,6 +115,14 @@
             } else {
                 output.innerHTML += '<p>No frequent coauthorship conflicts found.</p>';
             }
+            
+            // Add institutional conflicts section
+            if (data.conflicts.institutionalConflicts && data.conflicts.institutionalConflicts.length > 0) {
+                output.innerHTML += '<h3>Institutional Conflicts</h3>';
+                output.innerHTML += generateInstitutionalConflictsTable(data.conflicts.institutionalConflicts);
+            } else {
+                output.innerHTML += '<p>No institutional conflicts found.</p>';
+            }
         } else {
             output.className = 'no-conflicts';
             output.textContent = 'No conflicts found.';
@@ -134,6 +142,22 @@
         let table = '<table class="conflict-table"><thead><tr><th>Author ID</th><th>Reviewer ID</th><th>Co-Authored Papers</th></tr></thead><tbody>';
         conflicts.forEach(conflict => {
             table += `<tr><td>${conflict.author_id}</td><td>${conflict.reviewer_id}</td><td>${conflict.coauthored_papers || 'N/A'}</td></tr>`;
+        });
+        table += '</tbody></table>';
+        return table;
+    }
+
+    // New function to generate institutional conflicts table
+    function generateInstitutionalConflictsTable(conflicts) {
+        let table = '<table class="conflict-table"><thead><tr><th>Author ID</th><th>Reviewer ID</th><th>Institution</th><th>Location</th></tr></thead><tbody>';
+        conflicts.forEach(conflict => {
+            const location = `${conflict.city || 'Unknown'}, ${conflict.country || 'Unknown'}`;
+            table += `<tr class="institutional-conflict">
+                <td>${conflict.author_id}</td>
+                <td>${conflict.reviewer_id}</td>
+                <td>${conflict.institution_name || 'Unknown'}</td>
+                <td>${location}</td>
+            </tr>`;
         });
         table += '</tbody></table>';
         return table;
