@@ -9,19 +9,6 @@
         .container {
             max-width: 900px;
         }
-        .nav-links {
-            margin-bottom: 20px;
-            text-align: right;
-        }
-        .nav-links a {
-            margin-left: 15px;
-            text-decoration: none;
-            color: #2c3e50;
-            font-weight: bold;
-        }
-        .nav-links a:hover {
-            text-decoration: underline;
-        }
         .reviewer-card {
             border: 1px solid #ddd;
             border-radius: 5px;
@@ -98,10 +85,17 @@
 <body>
 
 <div class="container">
-    <div class="nav-links">
-        <a href="index.html">Conflict Checker</a>
-        <a href="view-tables.html">View Database</a>
-    </div>
+    <header>
+        <h1>Conference Management System</h1>
+        <nav>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="view-tables.html">View Tables</a></li>
+                <li><a href="recommend-reviewers.html" class="active">Recommend Reviewers</a></li>
+                <li><a href="author-profile.html">Author Profiles</a></li>
+            </ul>
+        </nav>
+    </header>
 
     <h2>Reviewer Recommendation System</h2>
     <p>Get a list of recommended reviewers with no conflicts and diverse backgrounds.</p>
