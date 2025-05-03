@@ -47,10 +47,6 @@
                         <h4>Publications by Year</h4>
                         <canvas id="yearlyChart"></canvas>
                     </div>
-                    <div class="chart-box">
-                        <h4>Publication Venues</h4>
-                        <canvas id="venueChart"></canvas>
-                    </div>
                 </div>
 
                 <!-- New section for institutional affiliations -->
@@ -131,7 +127,6 @@
     <script>
         // Chart instances
         let yearlyChartInstance = null;
-        let venueChartInstance = null;
         
         // Tab functionality
         function showTab(tabId) {
@@ -156,11 +151,6 @@
             if (yearlyChartInstance) {
                 yearlyChartInstance.destroy();
                 yearlyChartInstance = null;
-            }
-            
-            if (venueChartInstance) {
-                venueChartInstance.destroy();
-                venueChartInstance = null;
             }
         }
 
@@ -247,48 +237,6 @@
                             ticks: {
                                 stepSize: 1
                             }
-                        }
-                    }
-                }
-            });
-            
-            // Create venue breakdown chart
-            // Limit to top 10 venues for readability
-            const venueData = data.venueBreakdown.slice(0, 10);
-            const venues = venueData.map(item => {
-                // Truncate long venue names
-                const venueName = item.journal;
-                return venueName.length > 20 ? venueName.substring(0, 20) + '...' : venueName;
-            });
-            const venueCounts = venueData.map(item => item.count);
-            
-            const venueChartCanvas = document.getElementById('venueChart');
-            venueChartInstance = new Chart(venueChartCanvas, {
-                type: 'pie',
-                data: {
-                    labels: venues,
-                    datasets: [{
-                        data: venueCounts,
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.6)',
-                            'rgba(54, 162, 235, 0.6)',
-                            'rgba(255, 206, 86, 0.6)',
-                            'rgba(75, 192, 192, 0.6)',
-                            'rgba(153, 102, 255, 0.6)',
-                            'rgba(255, 159, 64, 0.6)',
-                            'rgba(199, 199, 199, 0.6)',
-                            'rgba(83, 102, 255, 0.6)',
-                            'rgba(40, 159, 64, 0.6)',
-                            'rgba(210, 199, 199, 0.6)'
-                        ],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'right',
                         }
                     }
                 }
