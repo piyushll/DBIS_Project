@@ -1,0 +1,47 @@
+\subsection{Coauthorship Detection SQL Implementation}
+\textbf{Recent coauthorship SQL query:}
+\begin{verbatim}
+SELECT pa.person_key AS author_id, 
+       pr.person_key AS reviewer_id, 
+       pa.publication_key
+FROM publication_authors pa
+JOIN publication_authors pr 
+     ON pr.publication_key = pa.publication_key
+JOIN publications p 
+     ON pa.publication_key = p.key
+WHERE pa.person_key = ANY($1::text[])
+  AND pr.person_key = ANY($2::text[])
+  AND p.year >= EXTRACT(YEAR FROM CURRENT_DATE) - $3
+\end{verbatim}
+
+\textbf{Frequent coauthorship SQL query:}
+\begin{verbatim}
+SELECT pa.person_key AS author_id, 
+       pr.person_key AS reviewer_id, 
+       COUNT(pa.publication_key) AS count
+FROM publication_authors pa
+JOIN publication_authors pr 
+     ON pr.publication_key = pa.publication_key
+JOIN publications p 
+     ON pa.publication_key = p.key
+WHERE pa.person_key = ANY($1::text[])
+  AND pr.person_key = ANY($2::text[])
+  AND p.year >= EXTRACT(YEAR FROM CURRENT_DATE) - $3
+GROUP BY pa.person_key, pr.person_key
+HAVING COUNT(pa.publication_key) >= $4
+\end{verbatim}
+
+\subsection{Institutional Conflict Detection}
+\textbf{Institutional conflict SQL query:}
+\begin{verbatim}
+SELECT a_aff.author_key AS author_id, 
+       r_aff.author_key AS reviewer_id, 
+       a_aff.institution_name
+FROM author_affiliations a_aff
+JOIN author_affiliations r_aff 
+     ON LOWER(a_aff.institution_name) = 
+        LOWER(r_aff.institution_name)
+WHERE a_aff.author_key = ANY($1::text[])
+  AND r_aff.author_key = ANY($2::text[])
+  AND a_aff.author_key != r_aff.author_key
+\end{verbatim} 

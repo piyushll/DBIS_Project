@@ -1,0 +1,53 @@
+\section{Data Loading}
+
+\subsection{Database Schema Design}
+PostgreSQL database schema for DBLP bibliographic data consists of:
+
+\begin{itemize}
+    \item \textbf{publications}: Primary table with key fields (title, year, journal, publisher)
+    \item \textbf{persons}: Author/editor information storage
+    \item \textbf{publication\_authors}: Many-to-many relationship junction table
+    \item \textbf{publication\_editors}: Junction table for editors
+    \item \textbf{publication\_citations}: Citation relationships
+    \item \textbf{author\_affiliations}: Institutional affiliations from OpenAlex
+\end{itemize}
+
+Indexes implemented on key lookup fields: author names, publication years, titles, and journals. The complete schema is given at the end of the report.
+
+\subsection{DBLP Data Loading Implementation}
+Key implementation components in \texttt{dblp\_load.py}:
+
+\begin{itemize}
+    \item XML parsing with lxml's iterparse for memory efficiency (O(1) memory usage)
+    \item Transaction management with psycopg2 connection pooling
+    \item Custom data type handling for dates, integers and null values
+    \item Automatic primary/foreign key management with SQL's ON CONFLICT directives
+\end{itemize}
+
+Processing sequence:
+1. Connect to PostgreSQL with connection pooling
+2. Parse XML stream with iterparse
+3. Extract publication metadata
+4. Insert publication record
+5. Extract and insert authors/editors with relationships
+6. Insert citation data
+7. Commit transaction batch
+
+\subsection{OpenAlex Affiliation Integration}
+Implementation details of \texttt{openalex\_affiliations.py}:
+
+\begin{itemize}
+    \item DOI extraction from publication URLs using regex pattern matching
+    \item Batch processing with configurable BATCH\_SIZE constant
+    \item HTTP request rate limiting (1 req/second) to comply with API terms
+    \item JSON response parsing with error handling
+    \item Checkpoint mechanism for resume capability
+\end{itemize}
+
+API integration flow:
+1. Query database for publications with DOIs
+2. Extract clean DOIs from URLs
+3. Fetch author affiliation data from OpenAlex API
+4. Process response and extract institution information
+5. Store normalized affiliation data
+6. Save checkpoint after each batch

@@ -33,3 +33,14 @@ Thumbs.db
 *.swo affiliation_checkpoint.json
 openalex_affiliation.log
 affiliation_checkpoint.json
+
+# LaTeX files
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk

@@ -1,0 +1,25 @@
+\section{Frontend Implementation}
+
+\subsection{Component Architecture}
+Structure of frontend components:
+\begin{verbatim}
+frontend/
+|-- index.html           # Main conflict checking page
+|-- view-tables.html     # Database table explorer
+|-- recommend-reviewers.html  # Reviewer suggestions
+|-- author-profile.html  # Author information display
+|-- styles/
+    |-- style.css        # Centralized styling
+\end{verbatim}
+
+\subsection{Conflict Checking Component}
+The conflict checking component provides an intuitive interface for identifying potential conflicts of interest between authors and reviewers. It features dual input fields for author and reviewer IDs with validation that enforces proper formatting through regex pattern matching. The component implements asynchronous form submission to prevent page reloads, providing immediate feedback through a loading indicator during API processing. Upon receiving results, it dynamically generates appropriate data visualizations based on the type and volume of conflicts detected. The system clearly differentiates between coauthorship and institutional conflicts through color-coded indicators and informative tooltips. Error states are handled gracefully with clear user guidance for resolution.
+
+\subsection{Table Viewer Component}
+The table viewer component enables database exploration through a flexible interface that adapts to any table structure without requiring predefined templates. It generates table representations dynamically based on metadata received from the backend, automatically adjusting column widths and formatting based on data types. The component implements pagination for large datasets with configurable page sizes to optimize performance. Special data types receive enhanced formatting - timestamps are displayed in human-readable format, URLs become clickable links, and long text fields are truncated with expandable views. The component maintains responsive behavior through CSS class manipulation that adjusts to container dimensions while preserving data readability.
+
+\subsection{Reviewer Recommendation Component}
+The reviewer recommendation interface provides a sophisticated system for suggesting appropriate reviewers while avoiding conflicts of interest. It features multiple configuration parameters including conflict lookback periods, collaboration thresholds, and diversity preferences, all with reasonable defaults and contextual guidance. The component presents recommendations in detailed cards showing each reviewer's publication history, venue diversity, institutional affiliations, and experience metrics. A visual score indicator helps users quickly assess reviewer suitability, while expandable sections provide additional detailed information on demand. The interface balances information density with usability through careful visual hierarchy and progressive disclosure of complex data.
+
+\subsection{Author Profile Component}
+The author profile component provides comprehensive information about researchers and their publication history. It includes a statistical overview section highlighting publication counts, venue distribution, and collaboration patterns. The publication timeline visualization uses interactive elements to show productivity trends and research focus evolution over time. Institutional affiliation data is presented with geographical context where available. The component also provides collaboration network insights, identifying frequent co-authors and research clusters. Navigation between author profiles is seamless through hyperlinked references, enabling exploration of the broader academic network while maintaining context.

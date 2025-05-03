@@ -1,0 +1,134 @@
+\subsection{Recommendation Process Overview}
+The reviewer recommendation system uses a multi-step process to identify suitable reviewers while avoiding conflicts of interest:
+
+\begin{enumerate}
+    \item Query potential reviewers by publication count (expertise proxy)
+    \item Apply conflict filtering (coauthorship, institutional)
+    \item Collect metadata for scoring and diversity analysis
+    \item Apply a multi-component scoring algorithm
+    \item Use a hybrid selection strategy balancing score and diversity
+    \item Return top-N candidates with detailed metadata
+\end{enumerate}
+
+\subsection{Conflict Filtering}
+The system identifies and excludes three types of conflicts:
+
+\begin{itemize}
+    \item \textbf{Recent co-authorship:} Reviewers who co-authored papers with submission authors within a configurable time frame
+    \item \textbf{Frequent co-authorship:} Reviewers with more than a threshold number of co-authored papers with submission authors
+    \item \textbf{Institutional conflicts:} Reviewers affiliated with the same institutions as submission authors
+\end{itemize}
+
+\subsection{Scoring Methodology}
+For each eligible reviewer, the algorithm calculates a composite score with the following components:
+
+\begin{enumerate}
+    \item \textbf{Base Expertise Score (0-5 points):} Based on publication count
+    \begin{verbatim}
+    // Base score from publication count (experience)
+    let score = Math.min(reviewer.publication_count / 10, 5);
+    \end{verbatim}
+    
+    \item \textbf{Venue Diversity Score:} Rewards reviewers who publish in venues that are uncommon among other potential reviewers
+    \begin{verbatim}
+    // Venues that are less common get higher scores
+    const venueRarity = 1 / (venueFrequency[venue.journal] || 1);
+    venueDiversityScore += venueRarity * 2;
+    \end{verbatim}
+    
+    \item \textbf{Institutional Diversity Score:} Rewards reviewers from institutions that are less represented
+    \begin{verbatim}
+    // Less common institutions get higher scores
+    const instRarity = 1 / (institutionFrequency[inst.institution_name] || 1);
+    institutionDiversityScore += instRarity * 2;
+    \end{verbatim}
+    
+    \item \textbf{Experience Score (0-3 points):} Based on years active in publishing, with square root applied for diminishing returns
+    \begin{verbatim}
+    const yearsActive = reviewer.years_active.last_year - 
+                        reviewer.years_active.first_year + 1;
+    score += Math.min(Math.sqrt(yearsActive) / 2, 3);
+    \end{verbatim}
+    
+    \item \textbf{Collaboration Network Score (0-2 points):} Based on number of co-authors, with logarithmic scaling
+    \begin{verbatim}
+    // Broader networks indicate greater field awareness
+    score += Math.min(Math.log10(reviewer.coauthor_count || 1), 2);
+    \end{verbatim}
+\end{enumerate}
+
+\subsection{Key Metadata Queries}
+The system utilizes several specialized queries to gather metadata for scoring:
+
+\begin{verbatim}
+/* Publication venues query */
+SELECT DISTINCT p.journal, COUNT(*) as count
+FROM publication_authors pa
+JOIN publications p ON pa.publication_key = p.key
+WHERE pa.person_key = $1 AND p.journal IS NOT NULL
+GROUP BY p.journal
+ORDER BY count DESC
+LIMIT 3
+
+/* Years of activity query */
+SELECT MIN(p.year) as first_year, MAX(p.year) as last_year
+FROM publication_authors pa
+JOIN publications p ON pa.publication_key = p.key
+WHERE pa.person_key = $1 AND p.year IS NOT NULL
+
+/* Co-authors count query */
+SELECT COUNT(DISTINCT pa2.person_key) as coauthor_count
+FROM publication_authors pa1
+JOIN publication_authors pa2 ON pa1.publication_key = pa2.publication_key 
+                           AND pa1.person_key != pa2.person_key
+WHERE pa1.person_key = $1
+
+/* Institutional affiliations query */
+SELECT institution_name, city, country, COUNT(*) as frequency
+FROM author_affiliations
+WHERE author_key = $1
+GROUP BY institution_name, city, country
+ORDER BY frequency DESC
+LIMIT 3
+\end{verbatim}
+
+\subsection{Diversity-Aware Selection Strategy}
+Rather than simply selecting the top N scored reviewers, the algorithm uses a hybrid strategy:
+
+\begin{enumerate}
+    \item First, select the highest-scoring reviewer
+    \item Then, alternate between selecting:
+    \begin{itemize}
+        \item Reviewers who add diversity to the pool (on odd selections)
+        \item The next highest-scoring reviewer (on even selections)
+    \end{itemize}
+\end{enumerate}
+
+The diversity check evaluates whether a reviewer publishes in venues or belongs to institutions not already covered by selected reviewers:
+
+\begin{verbatim}
+const addsDiversity = (reviewer) => {
+    // If we have fewer than 2 reviewers, any will do
+    if (selectedReviewers.length < 2) return true;
+    
+    // Check for new venues
+    for (const venue of reviewer.venues) {
+        if (!selectedVenues.has(venue.journal)) {
+            return true;
+        }
+    }
+    
+    // Check for new institutions
+    if (reviewer.institutions) {
+        for (const inst of reviewer.institutions) {
+            if (!selectedInstitutions.has(inst.institution_name)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+};
+\end{verbatim}
+
+This approach ensures a balance between selecting the most qualified reviewers and maintaining diversity in research focus and institutional backgrounds. 
